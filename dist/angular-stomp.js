@@ -77,8 +77,8 @@
             },
             $get: {
                 /* @ngInject */
-                value: ["$q", "$log", "$rootScope", "Stomp", function $get($q, $log, $rootScope, Stomp) {
-                    return new ngStompWebSocket(this.settings, $q, $log, $rootScope, Stomp);
+                value: ["$q", "$log", "$rootScope", "Stomp", "$timeout", function $get($q, $log, $rootScope, Stomp, $timeout) {
+                    return new ngStompWebSocket(this.settings, $q, $log, $rootScope, Stomp, $timeout);
                 }]
             }
         });
@@ -86,28 +86,38 @@
     }();
     var ngStompWebSocket = function () {
         /*@ngNoInject*/
-        function ngStompWebSocket(settings, $q, $log, $rootScope, Stomp) {
+        function ngStompWebSocket(settings, $q, $log, $rootScope, Stomp, $timeout) {
             _classCallCheck(this, ngStompWebSocket);
             this.settings = settings;
+            this.settings.RECONNECT_TIMEOUT = this.settings.RECONNECT_TIMEOUT ? this.settings.RECONNECT_TIMEOUT : 3000;
             this.$q = $q;
+            this.$timeout = $timeout;
+            this.Stomp = Stomp;
+            this.$log = $log;
             this.$rootScope = $rootScope;
-            this.stompClient = settings['class'] ? Stomp.over(new settings['class'](settings.url)) : Stomp.client(settings.url);
-            this.stompClient.debug = settings.debug ? $log.debug : function () {
-            };
             this.connections = [];
             this.deferred = this.$q.defer();
             this.promiseResult = this.deferred.promise;
+            this.subscribed = [];
             this.connect();
         }
         _createClass(ngStompWebSocket, {
             connect: {
                 value: function connect() {
                     var _this = this;
-                    this.stompClient.connect(this.settings.login, this.settings.password, function () {
+                    this.stompClient = this.settings['class'] ? this.Stomp.over(new this.settings['class'](this.settings.url)) : this.Stomp.client(this.settings.url);
+                    this.stompClient.debug = this.settings.debug ? this.$log.debug : function () {
+                    };
+                    this.stompClient.connect({}, function () {
                         _this.deferred.resolve();
+                        for (var j = 0, len = _this.subscribed.length; j < len; j++) {
+                            _this.subscribed[j].subscribeFn();
+                        }
                         _this.$digestStompAction();
                     }, function () {
-                        _this.deferred.reject();
+                        _this.$timeout(function () {
+                            _this.connect();
+                        }, _this.settings.RECONNECT_TIMEOUT);
                         _this.$digestStompAction();
                     }, this.settings.vhost);
                     return this.promiseResult;
@@ -117,8 +127,15 @@
                 value: function subscribe(url, callback, header, scope) {
                     var _this = this;
                     this.promiseResult.then(function () {
-                        _this.$stompSubscribe(url, callback, header || {});
-                        _this.unRegisterScopeOnDestroy(scope, url);
+                        var subscribeFn = function () {
+                            _this.$stompSubscribe(url, callback, header || {});
+                            _this.unRegisterScopeOnDestroy(scope, url);
+                        };
+                        _this.subscribed.push({
+                            url: url,
+                            subscribeFn: subscribeFn
+                        });
+                        subscribeFn();
                     });
                     return this;
                 }
@@ -179,6 +196,16 @@
                     }
                     if (indexToRemove !== false) {
                         this.connections.splice(indexToRemove, 1);
+                    }
+                    var subscribedIndexToRemove = false;
+                    for (var j = 0, len = this.subscribed.length; j < len; j++) {
+                        if (this.subscribed[j].url === queue) {
+                            subscribedIndexToRemove = j;
+                            break;
+                        }
+                    }
+                    if (subscribedIndexToRemove !== false) {
+                        this.subscribed.splice(subscribedIndexToRemove, 1);
                     }
                 }
             },

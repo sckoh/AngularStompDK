@@ -77,8 +77,8 @@
             },
             $get: {
                 /* @ngInject */
-                value: ["$q", "$log", "$rootScope", "Stomp", "$timeout", function $get($q, $log, $rootScope, Stomp, $timeout) {
-                    return new ngStompWebSocket(this.settings, $q, $log, $rootScope, Stomp, $timeout);
+                value: ["$q", "$log", "$rootScope", "Stomp", "$timeout", "Session", function $get($q, $log, $rootScope, Stomp, $timeout, Session) {
+                    return new ngStompWebSocket(this.settings, $q, $log, $rootScope, Stomp, $timeout, Session);
                 }]
             }
         });
@@ -86,7 +86,7 @@
     }();
     var ngStompWebSocket = function () {
         /*@ngNoInject*/
-        function ngStompWebSocket(settings, $q, $log, $rootScope, Stomp, $timeout) {
+        function ngStompWebSocket(settings, $q, $log, $rootScope, Stomp, $timeout, Session) {
             _classCallCheck(this, ngStompWebSocket);
             this.settings = settings;
             this.settings.RECONNECT_TIMEOUT = this.settings.RECONNECT_TIMEOUT ? this.settings.RECONNECT_TIMEOUT : 3000;
@@ -99,13 +99,19 @@
             this.deferred = this.$q.defer();
             this.promiseResult = this.deferred.promise;
             this.subscribed = [];
+            this.Session = Session;
             this.connect();
         }
         _createClass(ngStompWebSocket, {
+            prepareUrlWithToken: {
+                value: function prepareUrlWithToken() {
+                    return this.settings.url + '?access_token=' + this.Session.getSocialBearerToken(true);
+                }
+            },
             connect: {
                 value: function connect() {
                     var _this = this;
-                    this.stompClient = this.settings['class'] ? this.Stomp.over(new this.settings['class'](this.settings.url)) : this.Stomp.client(this.settings.url);
+                    this.stompClient = this.settings['class'] ? this.Stomp.over(new this.settings['class'](this.prepareUrlWithToken())) : this.Stomp.client(this.prepareUrlWithToken());
                     this.stompClient.debug = this.settings.debug ? this.$log.debug : function () {
                     };
                     this.stompClient.connect({}, function () {
@@ -115,11 +121,12 @@
                         }
                         _this.$digestStompAction();
                     }, function () {
+                        console.log('fail ws');
                         _this.$timeout(function () {
                             _this.connect();
                         }, _this.settings.RECONNECT_TIMEOUT);
                         _this.$digestStompAction();
-                    }, this.settings.vhost);
+                    });
                     return this.promiseResult;
                 }
             },

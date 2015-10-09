@@ -1,7 +1,7 @@
 {
     "name": "AngularStompDK",
     "version": "0.3.0",
-    "main": "dist/angular-stomp.min.js",
+    "main": "dist/angular-stomp.js",
     "ignore": [
         "source",
         "spec",
